@@ -13,7 +13,7 @@
 <p align="center">
     <a href="#wirecloud-mode"><b>With WireCloud</b></a> ·
     <a href="#self-hosting">Self-hosting</a> ·
-    <a href="https://wirecore.github.io/wireterm-server/">API reference</a> ·
+    <a href="https://wirecore.github.io/WireTerm-Server/">API reference</a> ·
     <a href="CLIENT.md">Client guide</a> ·
     <a href="#encryption">Encryption</a> ·
     <a href="CONTRIBUTING.md">Contributing</a> ·
@@ -53,7 +53,7 @@ when you work on more than one device, and handle S3 next to SSH and SFTP. How
 it compares with Termius, electerm, Voltius and FileZilla is in the
 [client's README](https://github.com/WireCore/wireterm#how-it-compares).
 
-> **Working on a client?** The [API reference](https://wirecore.github.io/wireterm-server/)
+> **Working on a client?** The [API reference](https://wirecore.github.io/WireTerm-Server/)
 > lists every endpoint; [CLIENT.md](CLIENT.md) explains the flows behind them:
 > the envelope scheme of the encryption, sync and sharing step by step, and
 > the crates a client needs.
@@ -495,7 +495,7 @@ wins.
 
 The full reference — every endpoint with its parameters, including
 better-auth's under `/api/auth` — is generated from the code and published at
-**[wirecore.github.io/wireterm-server](https://wirecore.github.io/wireterm-server/)**.
+**[wirecore.github.io/WireTerm-Server](https://wirecore.github.io/WireTerm-Server/)**.
 A running server shows the same under `/documentation` with `API_DOCS=true`,
 and `npm run openapi` writes the OpenAPI description to a file. Tag and summary
 of each route live in `src/config/apiDocs.ts`; a test fails when a route is

@@ -5,8 +5,18 @@ updates:
       schedule:
           interval: weekly
       groups:
+          # The OpenTelemetry packages only resolve with each other (and with
+          # the @opentelemetry/api they share): one pull request for all of
+          # them, majors included.
+          opentelemetry:
+              patterns: ['@opentelemetry/*']
           minor-and-patch:
               update-types: [minor, patch]
+      ignore:
+          # typescript-eslint does not accept TypeScript 7 yet. Lift this once
+          # it does.
+          - dependency-name: typescript
+            update-types: [version-update:semver-major]
     - package-ecosystem: docker
       directory: /.docker/prod
       schedule:
