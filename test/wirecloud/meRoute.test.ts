@@ -122,3 +122,55 @@ describe('GET /api/wirecloud/me', () => {
 		expect(response.statusCode).toBe(404);
 	});
 });
+
+describe('GET /api/workspaces in WireCloud mode', () => {
+	it('names the WireCloud company of each organization that stands for one', async () => {
+		const { call, prismaMock } = await load();
+		prismaMock.member.findMany.mockResolvedValue([
+			{
+				role: 'owner',
+				organization: {
+					id: 'org-personal',
+					name: 'Personal',
+					slug: 'personal-user-1',
+					metadata: JSON.stringify({ kind: 'personal' }),
+					revision: 1n,
+				},
+			},
+			{
+				role: 'member',
+				organization: {
+					id: 'org-acme',
+					name: 'Acme GmbH',
+					slug: 'company-c1',
+					metadata: JSON.stringify({ kind: 'company' }),
+					revision: 2n,
+				},
+			},
+		]);
+		prismaMock.externalRef.findMany.mockResolvedValue([
+			{ localId: 'org-acme', externalId: 'company-1' },
+		]);
+
+		const response = await call('GET', '/api/workspaces', {
+			headers: await bearer(),
+		});
+
+		expect(response.statusCode).toBe(200);
+		const workspaces =
+			response.json<{ id: string; wirecloudCompany: string | null }[]>();
+		expect(workspaces.map((w) => [w.id, w.wirecloudCompany])).toEqual([
+			['org-personal', null],
+			['org-acme', 'company-1'],
+		]);
+		// Only mappings of this server's own WireCloud count.
+		expect(prismaMock.externalRef.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					entityType: 'organization',
+					issuer: ISSUER,
+				}),
+			})
+		);
+	});
+});

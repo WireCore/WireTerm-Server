@@ -63,7 +63,8 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
 
 	'GET /api/workspaces': {
 		tags: ['Workspaces'],
-		summary: "The user's workspaces, with their kind and role",
+		summary:
+			"The user's workspaces, with their kind, role and – in WireCloud mode – the WireCloud company",
 	},
 	[`GET ${WS}/sync`]: {
 		tags: ['Workspaces'],

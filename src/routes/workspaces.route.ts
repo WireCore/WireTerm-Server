@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import prisma from 'database';
+import { AUTH_MODE, WIRECLOUD_ISSUER } from 'globals';
 import { requireUser } from 'services/AuthService';
 import { requireWorkspace } from 'services/RequestAccess';
 import { delta } from 'services/SyncService';
@@ -29,6 +30,24 @@ export default (fastify: FastifyInstance) => {
 			},
 		});
 
+		// In WireCloud mode: which WireCloud company an organization stands for.
+		// The client fetches the company's image from WireCloud with it; this
+		// server keeps no pictures.
+		const companies = new Map<string, string>();
+		if (AUTH_MODE === 'wirecloud' && memberships.length > 0) {
+			const refs = await prisma.externalRef.findMany({
+				where: {
+					entityType: 'organization',
+					issuer: WIRECLOUD_ISSUER,
+					localId: {
+						in: memberships.map((m) => m.organization.id),
+					},
+				},
+				select: { localId: true, externalId: true },
+			});
+			for (const ref of refs) companies.set(ref.localId, ref.externalId);
+		}
+
 		return memberships.map((membership) => ({
 			id: membership.organization.id,
 			name: membership.organization.name,
@@ -39,6 +58,9 @@ export default (fastify: FastifyInstance) => {
 			kind: workspaceKind(membership.organization.metadata),
 			role: membership.role,
 			revision: revision(membership.organization.revision),
+			// `null` for "Personal", for organizations of this server's own and
+			// outside WireCloud mode.
+			wirecloudCompany: companies.get(membership.organization.id) ?? null,
 		}));
 	});
 

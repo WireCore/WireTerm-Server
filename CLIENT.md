@@ -59,6 +59,12 @@ slug `personal-<userId>`, one member in the role `owner`, no team.
 members" and **no** "Delete" on it — the server refuses to delete it anyway
 (`PERSONAL_WORKSPACE_NOT_DELETABLE`). Renaming works.
 
+In [WireCloud mode](README.md#wirecloud-mode) `wirecloudCompany` names the
+WireCloud company an organization stands for, otherwise it is `null`. The
+client fetches the company's picture with it from WireCloud
+(`GET /v1/companies/<wirecloudCompany>/image` with its WireCloud access token);
+this server keeps no pictures.
+
 Inviting people into the personal workspace is allowed. That is exactly how it
 becomes a team: no move function, no switch. Whoever wants to keep private and
 work apart creates an ordinary organization next to it — any number are
@@ -536,29 +542,29 @@ In the answer every `recoveryKeys` entry also carries its `id` and `usedAt`.
 
 ### Workspace
 
-| Method     | Path                                              | Purpose                                                      |
-| ---------- | ------------------------------------------------- | ------------------------------------------------------------ |
-| GET        | `/api/workspaces`                                 | `[{ id, name, slug, kind, role, revision }]`                 |
-| GET        | `/api/workspaces/:org/sync?since=N`               | the sync                                                     |
-| POST       | `/api/workspaces/:org/projects`                   | `{ id, name, position? }`                                    |
-| PATCH      | `/api/workspaces/:org/projects/:id`               | `{ name?, position?, expectedRevision? }`                    |
-| DELETE     | `/api/workspaces/:org/projects/:id`               | tombstone                                                    |
-| GET/PUT    | `/api/workspaces/:org/projects/:id/shares`        | `{ shares:[{teamId, role}] }`                                |
-| GET        | `/api/workspaces/:org/projects/:id/key-requests`  | who is missing something                                     |
-| POST       | `/api/workspaces/:org/projects/:id/keys`          | `{ keyId, grants[] }`                                        |
-| DELETE     | `/api/workspaces/:org/projects/:id/keys/:userId`  | revoke a copy                                                |
-| GET        | `/api/workspaces/:org/members/:userId/stale-keys` | what to renew after a removal                                |
-| GET        | `/api/workspaces/:org/member-keys`                | public keys of all members                                   |
-| POST       | `/api/workspaces/:org/projects/:id/connections`   | create a connection                                          |
-| PATCH      | `/api/workspaces/:org/connections/:id`            | change it                                                    |
-| DELETE     | `/api/workspaces/:org/connections/:id`            | tombstone                                                    |
-| PUT/DELETE | `/api/workspaces/:org/connections/:id/secret`     | ciphertext                                                   |
-| PUT/DELETE | `/api/workspaces/:org/vault-accounts/:provider`   | `onePassword` \| `bitwarden`                                 |
-| POST       | `/api/workspaces/:org/known-hosts`                | `{ host, port?, algorithm, publicKey }`                      |
-| DELETE     | `/api/workspaces/:org/known-hosts/:id`            | revoke trust                                                 |
-| POST       | `/api/workspaces/:org/snippets`                   | `{ id, name, command, folder?, position? }`                  |
-| PATCH      | `/api/workspaces/:org/snippets/:id`               | `{ name?, command?, folder?, position?, expectedRevision? }` |
-| DELETE     | `/api/workspaces/:org/snippets/:id`               | tombstone                                                    |
+| Method     | Path                                              | Purpose                                                        |
+| ---------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| GET        | `/api/workspaces`                                 | `[{ id, name, slug, kind, role, revision, wirecloudCompany }]` |
+| GET        | `/api/workspaces/:org/sync?since=N`               | the sync                                                       |
+| POST       | `/api/workspaces/:org/projects`                   | `{ id, name, position? }`                                      |
+| PATCH      | `/api/workspaces/:org/projects/:id`               | `{ name?, position?, expectedRevision? }`                      |
+| DELETE     | `/api/workspaces/:org/projects/:id`               | tombstone                                                      |
+| GET/PUT    | `/api/workspaces/:org/projects/:id/shares`        | `{ shares:[{teamId, role}] }`                                  |
+| GET        | `/api/workspaces/:org/projects/:id/key-requests`  | who is missing something                                       |
+| POST       | `/api/workspaces/:org/projects/:id/keys`          | `{ keyId, grants[] }`                                          |
+| DELETE     | `/api/workspaces/:org/projects/:id/keys/:userId`  | revoke a copy                                                  |
+| GET        | `/api/workspaces/:org/members/:userId/stale-keys` | what to renew after a removal                                  |
+| GET        | `/api/workspaces/:org/member-keys`                | public keys of all members                                     |
+| POST       | `/api/workspaces/:org/projects/:id/connections`   | create a connection                                            |
+| PATCH      | `/api/workspaces/:org/connections/:id`            | change it                                                      |
+| DELETE     | `/api/workspaces/:org/connections/:id`            | tombstone                                                      |
+| PUT/DELETE | `/api/workspaces/:org/connections/:id/secret`     | ciphertext                                                     |
+| PUT/DELETE | `/api/workspaces/:org/vault-accounts/:provider`   | `onePassword` \| `bitwarden`                                   |
+| POST       | `/api/workspaces/:org/known-hosts`                | `{ host, port?, algorithm, publicKey }`                        |
+| DELETE     | `/api/workspaces/:org/known-hosts/:id`            | revoke trust                                                   |
+| POST       | `/api/workspaces/:org/snippets`                   | `{ id, name, command, folder?, position? }`                    |
+| PATCH      | `/api/workspaces/:org/snippets/:id`               | `{ name?, command?, folder?, position?, expectedRevision? }`   |
+| DELETE     | `/api/workspaces/:org/snippets/:id`               | tombstone                                                      |
 
 ### Connections
 

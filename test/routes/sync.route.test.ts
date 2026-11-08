@@ -249,6 +249,7 @@ describe('the list of workspaces', () => {
 				kind: 'personal',
 				role: 'owner',
 				revision: '3',
+				wirecloudCompany: null,
 			},
 			{
 				id: ORGANIZATION,
@@ -257,6 +258,7 @@ describe('the list of workspaces', () => {
 				kind: 'organization',
 				role: 'member',
 				revision: '7',
+				wirecloudCompany: null,
 			},
 		]);
 	});
