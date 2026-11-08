@@ -1,0 +1,13 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	// What `npm run build` compiles into dist/: only the sources.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"sourceMap": true,
+		"rootDir": "./src",
+		"outDir": "dist"
+	},
+	"include": ["src/**/*.ts"],
+	"tsc-alias": { "resolveFullPaths": true, "verbose": false }
+}

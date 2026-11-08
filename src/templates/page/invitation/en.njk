@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Invitation to a workspace</title>
+	</head>
+	<body
+		style="
+			margin: 0;
+			padding: 48px 24px;
+			font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+			color: #1c1c1e;
+			background: #f5f5f7;
+		"
+	>
+		<main
+			style="
+				max-width: 420px;
+				margin: 0 auto;
+				padding: 32px;
+				background: #fff;
+				border-radius: 12px;
+			"
+		>
+			<h1 style="font-size: 20px; margin: 0 0 16px">Invitation to a workspace</h1>
+			<p style="margin: 0 0 16px; line-height: 1.5">Open WireTerm, choose <strong>Add workspace</strong> and paste this link where it asks for an invitation:</p>
+			<input type="text" readonly value="{{ link }}" onfocus="this.select()" style="display: block; width: 100%; box-sizing: border-box; padding: 10px; margin: 6px 0 16px; border: 1px solid #c7c7cc; border-radius: 6px; font: inherit; font-family: ui-monospace, monospace; font-size: 13px" />
+			<p style="margin: 0; line-height: 1.5; color: #6b6b70; font-size: 13px">You need to be signed in with the account the invitation was sent to.</p>
+		</main>
+	</body>
+</html>

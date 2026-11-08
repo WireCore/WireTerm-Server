@@ -1,0 +1,48 @@
+services:
+    # Database
+    # Deliberately without `ports`: the database is only reachable from the
+    # Compose network — by phpMyAdmin and the backend. Whoever wants to look
+    # inside from outside uses phpMyAdmin or `docker compose exec wireterm_db mariadb`.
+    wireterm_db:
+        image: mariadb:11.4
+        container_name: wireterm_db
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: wireterm
+            MYSQL_USER: wireterm
+            MYSQL_PASSWORD: wireterm
+        volumes:
+            - ./db-data:/var/lib/mysql
+    # phpmyadmin
+    wireterm_phpmyadmin:
+        depends_on:
+            - wireterm_db
+        image: phpmyadmin/phpmyadmin
+        container_name: wireterm_phpmyadmin
+        ports:
+            - '8081:80'
+        environment:
+            PMA_HOST: wireterm_db
+            MYSQL_ROOT_PASSWORD: password
+            UPLOAD_LIMIT: 300M
+    # Mail — catches every SMTP mail instead of sending it. Invitation and
+    # password reset mails end up here instead of with real recipients.
+    wireterm_maildev:
+        image: maildev/maildev
+        container_name: wireterm_maildev
+        ports:
+            - '8082:1080' # Web UI
+            - '1025:1025' # SMTP
+    # Server
+    wireterm_node:
+        depends_on:
+            - wireterm_db
+            - wireterm_maildev
+        build:
+            context: .
+            dockerfile: ./.docker/dev/Dockerfile
+        container_name: wireterm_backend
+        ports:
+            - 8080:8080
+        volumes:
+            - .:/var/www/html

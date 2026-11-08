@@ -1,0 +1,12 @@
+db-data/
+.idea/
+node_modules/
+build/
+dist/
+tmp/
+temp/
+.env
+coverage/
+/src/generated/prisma
+.claude
+docker-compose.override.yml

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: 26
+                  cache: npm
+            # postinstall runs `prisma generate`; the ERD generator needs a browser
+            # and is only for development.
+            - run: npm ci
+              env:
+                  DISABLE_ERD: 'true'
+                  PUPPETEER_SKIP_DOWNLOAD: 'true'
+            - run: npm run lint
+            - run: npm run format:check
+            # Sources, tests, seed and configuration (tsconfig.json).
+            - run: npm run typecheck
+            # The tests replace the database and better-auth (see vitest.config.ts).
+            - run: npm test
+            - run: npm audit --omit=dev
+
+    image:
+        # Builds the production image without pushing it, so a broken Dockerfile
+        # shows up in the pull request and not at release time.
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - uses: docker/setup-buildx-action@v3
+            - uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  file: .docker/prod/Dockerfile
+                  push: false
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="de">
+	<body
+		style="
+			margin: 0;
+			padding: 24px;
+			font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+			color: #1c1c1e;
+		"
+	>
+		<h1 style="font-size: 20px; margin: 0 0 16px">
+			Einladung in einen Workspace
+		</h1>
+		<p style="margin: 0 0 16px; line-height: 1.5">
+			{% if inviter and inviter.user %}{{ inviter.user.name }} hat dich{%
+			else %}Du wurdest{% endif %} in den WireTerm-Workspace
+			<strong>{{ organization.name }}</strong> eingeladen.
+		</p>
+		<p style="margin: 0 0 24px">
+			<a
+				href="{{ invitationLink }}"
+				style="
+					display: inline-block;
+					padding: 10px 18px;
+					background: #1c1c1e;
+					color: #fff;
+					border-radius: 6px;
+					text-decoration: none;
+				"
+				>Einladung annehmen</a
+			>
+		</p>
+		<p style="margin: 0; line-height: 1.5; color: #6b6b70; font-size: 13px">
+			Die Projekte des Workspaces siehst du erst, wenn sie an eines deiner
+			Teams freigegeben sind — und die Zugangsdaten darin erst, wenn ein
+			Mitglied sie für dich freigeschaltet hat. Das passiert in deren
+			WireTerm, nicht auf dem Server.
+		</p>
+	</body>
+</html>
