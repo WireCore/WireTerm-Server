@@ -39,7 +39,7 @@ jobs:
               env:
                   DATABASE_URL: mysql://docs:docs@localhost:3306/docs
                   PUBLIC_URL: https://api.wireterm.wirecore.net
-            - uses: actions/upload-pages-artifact@v3
+            - uses: actions/upload-pages-artifact@v5
               with:
                   path: site
 
