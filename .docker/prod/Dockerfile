@@ -1,5 +1,10 @@
 # ---------- Build Stage ----------
-FROM docker.io/library/node:26-alpine AS builder
+# Runs on the build machine's own platform, also when the image is built for
+# another one: what it produces (dist/ and the generated Prisma client) is
+# plain JavaScript. Under emulation (QEMU, arm64 on an amd64 runner)
+# `prisma generate` misreads the schema and fails with hundreds of bogus
+# validation errors.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:26-alpine AS builder
 
 WORKDIR /app
 
