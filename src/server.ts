@@ -1,4 +1,4 @@
-import './instrumentation';
+import './telemetry';
 import app from './index';
 import router from './config/routes';
 import fastifySwagger from '@fastify/swagger';

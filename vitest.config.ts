@@ -15,7 +15,7 @@ export default defineConfig({
 		setupFiles: ['./test/setup.ts'],
 		coverage: {
 			include: ['src/**/*.ts'],
-			exclude: ['src/generated/**', 'src/instrumentation.ts'],
+			exclude: ['src/generated/**', 'src/telemetry.ts'],
 		},
 	},
 });
