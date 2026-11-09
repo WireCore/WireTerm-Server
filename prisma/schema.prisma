@@ -170,7 +170,6 @@ model Organization {
   projects   Project[]
   vaults     VaultAccount[]
   knownHosts KnownHostKey[]
-  snippets   Snippet[]
 
   @@unique([slug])
   @@map("organization")
@@ -365,6 +364,7 @@ model Project {
   connections  Connection[]
   shares       ProjectShare[]
   keys         ProjectKey[]
+  snippets     Snippet[]
 
   @@index([organizationId, revision])
   @@map("project")
@@ -457,7 +457,8 @@ model Connection {
   ftp FtpConnection?
   s3  S3Connection?
 
-  secret Secret?
+  secret   Secret?
+  snippets Snippet[]
 
   @@index([projectId])
   @@index([revision])
@@ -505,8 +506,9 @@ model SshConnection {
   /// `{ mode: "custom", kind: "socks5"|"http", host, port }`, without auth.
   /// `null` means: the default proxy of the connecting device.
   proxy            Json?
-  /// A snippet of the same workspace that is sent in the terminal after
-  /// connecting. Without a foreign key, like `jumpConnectionId`.
+  /// A locked snippet that applies to this connection and is sent in the
+  /// terminal after connecting. Without a foreign key, like
+  /// `jumpConnectionId`; the snippet routes keep it valid.
   startupSnippetId String? @db.VarChar(191)
 
   connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
@@ -662,29 +664,37 @@ model KnownHostKey {
 }
 
 /// A saved command that the terminal sends at the push of a button — or when
-/// connecting, if an SSH connection names it as `startupSnippetId`. On the
-/// workspace so that the team has the same ones; only owner and admin may
-/// change it, because a startup command runs unasked in other people's
-/// terminals.
+/// connecting, if an SSH connection names it as `startupSnippetId`. It belongs
+/// to a project and is seen by whoever sees the project: for all of its
+/// connections, or for just one.
+///
+/// `locked` decides who may change it: locked only owner and admin, otherwise
+/// the project's editors as well. Only a locked snippet can be a startup
+/// command, because that runs unasked in other people's terminals.
 model Snippet {
   /// From the client, as with project and connection.
-  id             String    @id @db.VarChar(191)
-  organizationId String
-  name           String    @db.VarChar(255)
+  id           String    @id @db.VarChar(191)
+  projectId    String
+  /// Only for this connection of the project; empty means: for all of them.
+  connectionId String?   @db.VarChar(191)
+  locked       Boolean   @default(true)
+  name         String    @db.VarChar(255)
   /// The folder, `/`-separated. Empty means top level.
-  folder         String    @default("") @db.VarChar(255)
+  folder       String    @default("") @db.VarChar(255)
   /// What is sent, line by line. The client replaces placeholders like
   /// `{{connection.host}}`.
-  command        String    @db.Text
-  position       Int       @default(0)
-  revision       BigInt    @default(0)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  command      String    @db.Text
+  position     Int       @default(0)
+  revision     BigInt    @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection Connection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
-  @@index([organizationId, revision])
+  @@index([projectId, revision])
+  @@index([connectionId])
   @@map("snippet")
 }
 

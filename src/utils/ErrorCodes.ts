@@ -25,6 +25,11 @@ export enum ErrorCodes {
 	// Snippet
 	SNIPPET_NOT_FOUND = 'SN-NF',
 	SNIPPET_EXISTS = 'SN-EX',
+	/// Unlocked or for another connection, it would leave connections behind
+	/// whose startup command they may not or cannot send.
+	SNIPPET_IN_USE = 'SN-IU',
+	/// A startup command has to be a locked snippet for this connection.
+	SNIPPET_NOT_STARTUP = 'SN-NS',
 	// Concurrent change
 	REVISION_CONFLICT = 'R-CF',
 	// WireCloud mode

@@ -127,14 +127,19 @@ describe('sync', () => {
 		expect(response.json().secrets).toEqual([]);
 	});
 
-	test('the snippets come along, for every member and filtered by `since`', async () => {
+	test('the snippets come along with the projects one sees, filtered by `since`', async () => {
 		loginAs();
 		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
 		prismaMock.teamMember.findMany.mockResolvedValue([]);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ projectId: 'project-1', role: 'viewer' },
+		]);
 		prismaMock.snippet.findMany.mockResolvedValue([
 			{
 				id: 'snippet-1',
-				organizationId: ORGANIZATION,
+				projectId: 'project-1',
+				connectionId: 'conn-1',
+				locked: true,
 				name: 'Logs',
 				folder: 'Maintenance',
 				command: 'tail -f /var/log/syslog',
@@ -147,12 +152,18 @@ describe('sync', () => {
 		const response = await call('GET', url, { query: { since: '5' } });
 
 		expect(prismaMock.snippet.findMany.mock.calls[0][0].where).toEqual({
-			organizationId: ORGANIZATION,
 			revision: { gt: 5n },
+			project: {
+				organizationId: ORGANIZATION,
+				id: { in: ['project-1'] },
+			},
 		});
 		expect(response.json().snippets).toEqual([
 			{
 				id: 'snippet-1',
+				projectId: 'project-1',
+				connectionId: 'conn-1',
+				locked: true,
 				name: 'Logs',
 				folder: 'Maintenance',
 				command: 'tail -f /var/log/syslog',

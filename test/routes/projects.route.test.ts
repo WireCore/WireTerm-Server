@@ -43,3 +43,25 @@ describe('creating a project', () => {
 		}
 	);
 });
+
+describe('deleting a project', () => {
+	test('its snippets get tombstones along with it', async () => {
+		owner();
+		prismaMock.project.findFirst.mockResolvedValue({
+			id: PROJECT,
+			organizationId: ORGANIZATION,
+			deletedAt: null,
+		});
+
+		const response = await call('DELETE', `${url}/${PROJECT}`);
+
+		expect(response.statusCode).toBe(204);
+		const tombstones = prismaMock.snippet.updateMany.mock.calls[0][0];
+		expect(tombstones.where).toEqual({
+			projectId: PROJECT,
+			deletedAt: null,
+		});
+		expect(tombstones.data.deletedAt).toBeInstanceOf(Date);
+		expect(tombstones.data.revision).toBe(5n);
+	});
+});

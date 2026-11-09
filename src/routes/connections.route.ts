@@ -3,6 +3,7 @@ import prisma from 'database';
 import { requireProject } from 'services/AccessService';
 import { requireWorkspace } from 'services/RequestAccess';
 import { nextRevision } from 'services/RevisionService';
+import { startupSnippetFits, tombstoneSnippets } from 'services/SnippetService';
 import {
 	checkRevision,
 	loadConnection,
@@ -201,6 +202,15 @@ export default (fastify: FastifyInstance) => {
 
 			const type = requireMatchingSettings(request.body);
 
+			const startup = request.body.ssh?.startupSnippetId as
+				string | undefined;
+			if (
+				startup &&
+				!(await startupSnippetFits(projectId, request.body.id, startup))
+			) {
+				throw conflict(ErrorCodes.SNIPPET_NOT_STARTUP);
+			}
+
 			const existing = await prisma.connection.findUnique({
 				where: { id: request.body.id },
 			});
@@ -263,6 +273,28 @@ export default (fastify: FastifyInstance) => {
 					})
 				: current.type;
 
+			// The startup command has to fit where the connection ends up. One
+			// that was set before and stays behind in the old project is
+			// dropped on a move instead of blocking it.
+			const project = moving ? target : current.projectId;
+			const before = current.ssh?.startupSnippetId ?? null;
+			const sent =
+				request.body.ssh === undefined
+					? before
+					: ((request.body.ssh.startupSnippetId as
+							string | undefined) ?? null);
+			let dropStartup = false;
+			if (
+				sent &&
+				(sent !== before || moving) &&
+				!(await startupSnippetFits(project, connectionId, sent))
+			) {
+				if (sent !== before) {
+					throw conflict(ErrorCodes.SNIPPET_NOT_STARTUP);
+				}
+				dropStartup = true;
+			}
+
 			const connection = await prisma.$transaction(async (tx) => {
 				const next = await nextRevision(tx, organizationId);
 
@@ -304,6 +336,20 @@ export default (fastify: FastifyInstance) => {
 							update: data,
 						});
 					}
+				}
+
+				if (dropStartup) {
+					await tx.sshConnection.updateMany({
+						where: { connectionId },
+						data: { startupSnippetId: null },
+					});
+				}
+				// Its own snippets go along into the other project.
+				if (moving) {
+					await tx.snippet.updateMany({
+						where: { connectionId },
+						data: { projectId: target, revision: next },
+					});
 				}
 
 				return tx.connection.update({
@@ -351,6 +397,7 @@ export default (fastify: FastifyInstance) => {
 						ciphertext: new Uint8Array(0),
 					},
 				});
+				await tombstoneSnippets(tx, { connectionId }, deletedAt, next);
 				await tx.connection.update({
 					where: { id: connectionId },
 					data: { deletedAt, revision: next },

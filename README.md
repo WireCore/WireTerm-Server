@@ -177,7 +177,7 @@ confirmed address — `anna@example.test` (owner, German), `ben@example.test`
 (admin) and `clara@example.test` (member of the team "Operations"), all with
 the password `wireterm-dev` — and the workspace "Example Corp" with two
 projects (only "Production" is shared with the team), SSH, FTP and S3
-connections and a snippet. The connections carry no secrets, since only the
+connections and a snippet in "Production". The connections carry no secrets, since only the
 client can encrypt them; they ask for a password when connecting. The seed
 refuses to run in production and in WireCloud mode and does nothing a second
 time.
@@ -717,6 +717,17 @@ The server refuses to start in local mode without `PUBLIC_URL`,
   for such a case; there is deliberately no repair path at runtime.
 - **The rate limit counts per process.** With several replicas each has its
   own counter; a shared store (Redis) would be the next step.
+- **The data of a company deleted in WireCloud stays forever.** `org.deleted`
+  removes the memberships and teams only; projects, connections and secrets
+  stay on the server with nobody left to reach them. That is right for access
+  taken away or a subscription ended — both can come back — but not for a
+  company that is gone for good, and it keeps connection data of a former
+  customer indefinitely. To decide: delete on `org.deleted` right away or
+  after a grace period (then with a cleanup job), and change the contract
+  with WireCloud ("access, never data") on both sides accordingly. Deleting
+  an organization's workspace from the client is deliberately not planned:
+  while the company exists at WireCloud, the next sign-in would recreate it
+  empty.
 
 ## Contributing
 

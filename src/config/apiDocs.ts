@@ -21,7 +21,10 @@ export const TAGS = [
 		name: 'Workspaces',
 		description: 'The workspaces of the signed-in user and their sync.',
 	},
-	{ name: 'Projects', description: 'Projects inside a workspace.' },
+	{
+		name: 'Projects',
+		description: 'Projects inside a workspace and their snippets.',
+	},
 	{
 		name: 'Connections',
 		description:
@@ -34,7 +37,7 @@ export const TAGS = [
 	},
 	{
 		name: 'Workspace settings',
-		description: 'Vault accounts, trusted host keys and snippets.',
+		description: 'Vault accounts and trusted host keys.',
 	},
 ];
 
@@ -150,17 +153,17 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
 		tags: ['Workspace settings'],
 		summary: 'Revoke trust in a host key',
 	},
-	[`POST ${WS}/snippets`]: {
-		tags: ['Workspace settings'],
-		summary: 'Create a snippet (owner, admin)',
+	[`POST ${WS}/projects/:projectId/snippets`]: {
+		tags: ['Projects'],
+		summary: 'Create a snippet (editor; locked only owner, admin)',
 	},
 	[`PATCH ${WS}/snippets/:snippetId`]: {
-		tags: ['Workspace settings'],
-		summary: 'Change a snippet',
+		tags: ['Projects'],
+		summary: 'Change a snippet (a locked one only owner, admin)',
 	},
 	[`DELETE ${WS}/snippets/:snippetId`]: {
-		tags: ['Workspace settings'],
-		summary: 'Delete a snippet (tombstone)',
+		tags: ['Projects'],
+		summary: 'Delete a snippet (tombstone, drops it as startup command)',
 	},
 };
 

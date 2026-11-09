@@ -3,6 +3,7 @@ import prisma from 'database';
 import { requireWorkspaceAdmin } from 'services/AccessService';
 import { requireWorkspace } from 'services/RequestAccess';
 import { nextRevision } from 'services/RevisionService';
+import { tombstoneSnippets } from 'services/SnippetService';
 import { checkRevision, loadProject } from 'services/TreeService';
 import { ErrorCodes } from 'utils/ErrorCodes';
 import { clientId, conflict, revision } from 'utils/http';
@@ -123,8 +124,8 @@ export default (fastify: FastifyInstance) => {
 
 	/// Deleting sets a tombstone instead of removing the row: a device that
 	/// has been offline since the deletion would otherwise never learn of it.
-	/// The connections below get their own, so the client removes them from
-	/// its copy one by one.
+	/// The connections and snippets below get their own, so the client removes
+	/// them from its copy one by one.
 	fastify.delete<{ Params: ProjectParams }>(
 		'/api/workspaces/:organizationId/projects/:projectId',
 		async (request, reply) => {
@@ -153,6 +154,7 @@ export default (fastify: FastifyInstance) => {
 						ciphertext: new Uint8Array(0),
 					},
 				});
+				await tombstoneSnippets(tx, { projectId }, deletedAt, next);
 				await tx.project.update({
 					where: { id: projectId },
 					data: { deletedAt, revision: next },

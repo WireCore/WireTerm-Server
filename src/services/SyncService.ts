@@ -65,7 +65,7 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 			where: { organizationId, revision: { gt: since } },
 		}),
 		prisma.snippet.findMany({
-			where: { organizationId, revision: { gt: since } },
+			where: { revision: { gt: since }, project: projectScope },
 			orderBy: { position: 'asc' },
 		}),
 		// Oldest first: the last version per project is the current one, under
@@ -171,6 +171,9 @@ export function projectKeyToApi(key: {
 
 export function snippetToApi(snippet: {
 	id: string;
+	projectId: string;
+	connectionId: string | null;
+	locked: boolean;
 	name: string;
 	folder: string;
 	command: string;
@@ -180,6 +183,9 @@ export function snippetToApi(snippet: {
 }) {
 	return {
 		id: snippet.id,
+		projectId: snippet.projectId,
+		connectionId: snippet.connectionId,
+		locked: snippet.locked,
 		name: snippet.name,
 		folder: snippet.folder,
 		command: snippet.command,

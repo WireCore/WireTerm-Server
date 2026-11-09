@@ -29,11 +29,13 @@ User ──member of──▶ Organization  ( = workspace, what workspaces.json 
  │                          │            │ share (editor|viewer)
  │                          │            ▼
  └──member of────────────── Team ──▶ Project ──▶ Connection ──▶ Secret (ciphertext)
-                                        │
+                                        │              ▲
+                                        ├──▶ Snippet ──┘ (for all connections,
+                                        │                 or for one)
                                         └──▶ ProjectKey  (the project key,
                                               wrapped once per entitled user)
 
-The organization also carries:  VaultAccount (1Password/Bitwarden), KnownHostKey, Snippet
+The organization also carries:  VaultAccount (1Password/Bitwarden), KnownHostKey
 ```
 
 A user sees **one row per organization** they are a member of in the sidebar.
@@ -98,7 +100,6 @@ better-auth:
 | Create, delete projects | yes           | no (403)    |
 | Manage shares           | yes           | no (403)    |
 | Set vault accounts      | yes           | no (403)    |
-| Create, change snippets | yes           | no (403)    |
 | See projects            | **all**       | only shared |
 | Add/remove host keys    | yes           | yes         |
 
@@ -449,8 +450,8 @@ The answer:
                        "revision","deletedAt" } ],
   "knownHosts":    [ { "id","host","port","algorithm","publicKey","trustedById",
                        "revision","deletedAt" } ],
-  "snippets":      [ { "id","name","folder","command","position",
-                       "revision","deletedAt" } ],
+  "snippets":      [ { "id","projectId","connectionId","locked","name",
+                       "folder","command","position","revision","deletedAt" } ],
   "projectKeys":   [ { "projectId","userId","keyId","algorithm",
                        "ephemeralPublicKey","nonce","wrappedKey" } ],
   "shares":        [ { "id","projectId","teamId","role" } ]
@@ -562,8 +563,8 @@ In the answer every `recoveryKeys` entry also carries its `id` and `usedAt`.
 | PUT/DELETE | `/api/workspaces/:org/vault-accounts/:provider`   | `onePassword` \| `bitwarden`                                   |
 | POST       | `/api/workspaces/:org/known-hosts`                | `{ host, port?, algorithm, publicKey }`                        |
 | DELETE     | `/api/workspaces/:org/known-hosts/:id`            | revoke trust                                                   |
-| POST       | `/api/workspaces/:org/snippets`                   | `{ id, name, command, folder?, position? }`                    |
-| PATCH      | `/api/workspaces/:org/snippets/:id`               | `{ name?, command?, folder?, position?, expectedRevision? }`   |
+| POST       | `/api/workspaces/:org/projects/:id/snippets`      | `{ id, name, command, connectionId?, locked?, … }`             |
+| PATCH      | `/api/workspaces/:org/snippets/:id`               | `{ name?, command?, connectionId?, locked?, … }`               |
 | DELETE     | `/api/workspaces/:org/snippets/:id`               | tombstone                                                      |
 
 ### Connections
@@ -588,7 +589,7 @@ The settings come in a field named after the type — the same tagged enum as
     "startPath": "",                // directory to start in
     "jumpConnectionId": null,       // ID of another SSH connection as jump host
     "agentForwarding": false,       // forward the SSH agent to the server
-    "startupSnippetId": null,       // ID of a snippet that runs after connecting
+    "startupSnippetId": null,       // ID of a locked snippet that runs after connecting
     "forwards": [                   // port forwards, like ssh -L / -R / -D
       { "kind": "local", "bindHost": "127.0.0.1", "bindPort": 8080,
         "targetHost": "db", "targetPort": 5432 }
@@ -614,12 +615,34 @@ also carries `seenAt`, the time the server last received it.
 `region`, `bucket`, `prefix`, `tls`, `pathStyle`, `acceptInvalidCert`,
 `storageClass`.
 
-Snippets are the workspace's saved commands, with a `/`-separated `folder`.
-Every member may read them; only owner and admin may create, change and
-delete them: an SSH connection can name one as its `startupSnippetId`, and it
-then runs unasked in the terminal of every colleague. Placeholders like
-`{{connection.host}}` are replaced by the client; the server stores the text
-as it comes.
+Snippets are a project's saved commands, with a `/`-separated `folder`. One
+with `connectionId: null` applies to all connections of the project, one with
+a `connectionId` only to that connection — and moves along with it into
+another project. Whoever sees the project sees its snippets.
+
+Writing needs `editor` on the project. `locked` decides the rest:
+
+|                             | owner / admin | editor                      |
+| --------------------------- | ------------- | --------------------------- |
+| Create (default `locked`)   | yes (`true`)  | yes (`false`, `true` → 403) |
+| Change, delete an open one  | yes           | yes                         |
+| Change, delete a locked one | yes           | no (403)                    |
+| Lock, unlock                | yes           | no (403)                    |
+
+Only a locked snippet that applies to the connection can be its
+`startupSnippetId` — otherwise `SN-NS` (409) — because a startup command runs
+unasked in the terminal of every colleague. The server keeps it that way:
+
+- unlocking a startup command, or binding it to another connection, fails
+  with `SN-IU` (409);
+- deleting a snippet takes it out of the connections that start with it,
+  with a new revision on each;
+- moving a connection into another project drops a startup command that does
+  not go along (one for all connections of the old project);
+- deleting a connection or project gives its snippets tombstones.
+
+Placeholders like `{{connection.host}}` are replaced by the client; the server
+stores the text as it comes.
 
 `proxy` exists for all three types: `{ "mode": "direct" }` for no proxy,
 `{ "mode": "custom", "kind": "socks5"|"http", "host", "port" }` for a custom
@@ -654,6 +677,8 @@ Always `{ "code": "…", "detail": "…" }`:
 | `T-NF`            | team not found                                |
 | `KH-NF`           | host key not found                            |
 | `SN-NF` / `SN-EX` | snippet not found (404) / exists (409)        |
+| `SN-NS`           | not a valid startup command (409)             |
+| `SN-IU`           | snippet is a startup command (409)            |
 | `R-CF`            | `expectedRevision` no longer matches (409)    |
 | `I-IP`            | invalid input (400)                           |
 | `RL`              | too many requests (429)                       |

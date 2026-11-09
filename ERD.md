@@ -342,6 +342,7 @@ prompt prompt
 
   "snippet" {
     String id "🗝️"
+    Boolean locked 
     String name 
     String folder 
     String command 
@@ -409,5 +410,6 @@ prompt prompt
     "secret" |o--|| "connection" : "connection"
     "known_host_key" }o--|| "organization" : "organization"
     "known_host_key" }o--|o "user" : "trustedBy"
-    "snippet" }o--|| "organization" : "organization"
+    "snippet" }o--|| "project" : "project"
+    "snippet" }o--|o "connection" : "connection"
 ```

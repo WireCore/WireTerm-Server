@@ -78,7 +78,11 @@ export async function workspaceAccess(
 /// the workspace's vault accounts. Who may edit a project is stated in the
 /// share.
 export function requireWorkspaceAdmin(access: WorkspaceAccess) {
-	if (access.role !== 'owner' && access.role !== 'admin') throw forbidden();
+	if (!isWorkspaceAdmin(access)) throw forbidden();
+}
+
+export function isWorkspaceAdmin(access: WorkspaceAccess): boolean {
+	return access.role === 'owner' || access.role === 'admin';
 }
 
 export function projectRole(

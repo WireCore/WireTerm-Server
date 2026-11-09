@@ -182,7 +182,7 @@ async function seedWorkspace(ids: Record<Person, string>) {
 		await tx.snippet.create({
 			data: {
 				id: randomUUID(),
-				organizationId,
+				projectId: production.id,
 				name: 'Disk usage',
 				folder: 'Maintenance',
 				command: 'df -h',

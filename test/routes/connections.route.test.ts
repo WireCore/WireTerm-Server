@@ -283,6 +283,11 @@ describe('creating a connection', () => {
 	test('a startup command is sent along as the ID of a snippet', async () => {
 		ownerWithLivingProject();
 		connectionCreates();
+		prismaMock.snippet.findFirst.mockResolvedValue({
+			projectId: PROJECT,
+			connectionId: null,
+			locked: true,
+		});
 
 		const response = await call('POST', create, {
 			payload: {
@@ -301,6 +306,44 @@ describe('creating a connection', () => {
 		expect(response.statusCode).toBe(201);
 		const written = prismaMock.connection.create.mock.calls[0][0].data;
 		expect(written.ssh.create.startupSnippetId).toBe('snippet-1');
+	});
+
+	test.each([
+		[
+			'an open snippet',
+			{ projectId: PROJECT, connectionId: null, locked: false },
+		],
+		[
+			'one of another project',
+			{ projectId: 'project-2', connectionId: null, locked: true },
+		],
+		[
+			'one for another connection',
+			{ projectId: PROJECT, connectionId: 'conn-9', locked: true },
+		],
+		['a deleted or unknown one', null],
+	])('%s is no startup command', async (_, snippet) => {
+		ownerWithLivingProject();
+		connectionCreates();
+		prismaMock.snippet.findFirst.mockResolvedValue(snippet);
+
+		const response = await call('POST', create, {
+			payload: {
+				id: CONNECTION,
+				name: 'web01',
+				type: 'ssh',
+				ssh: {
+					host: 'a',
+					user: 'root',
+					authSource: 'agent',
+					startupSnippetId: 'snippet-1',
+				},
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().code).toBe('SN-NS');
+		expect(prismaMock.connection.create).not.toHaveBeenCalled();
 	});
 
 	test("without a proxy the device's proxy applies — the column holds NULL", async () => {
@@ -475,6 +518,98 @@ describe('updating a connection', () => {
 		expect(response.json().projectId).toBe('project-2');
 	});
 
+	test("its own snippets go along, a startup command for the old project's connections stays behind", async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		prismaMock.project.findFirst.mockResolvedValue({
+			id: 'project-2',
+			organizationId: ORGANIZATION,
+			deletedAt: null,
+		});
+		existingConnection();
+		prismaMock.connection.findFirst.mockResolvedValue({
+			id: 'conn-1',
+			projectId: PROJECT,
+			type: 'ssh',
+			revision: 4n,
+			deletedAt: null,
+			ssh: { startupSnippetId: 'snippet-1' },
+		});
+		prismaMock.snippet.findFirst.mockResolvedValue({
+			projectId: PROJECT,
+			connectionId: null,
+			locked: true,
+		});
+
+		const response = await call('PATCH', single, {
+			payload: { projectId: 'project-2' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prismaMock.snippet.updateMany).toHaveBeenCalledWith({
+			where: { connectionId: 'conn-1' },
+			data: { projectId: 'project-2', revision: 6n },
+		});
+		expect(prismaMock.sshConnection.updateMany).toHaveBeenCalledWith({
+			where: { connectionId: 'conn-1' },
+			data: { startupSnippetId: null },
+		});
+	});
+
+	test('a new startup command that does not fit is refused', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		existingConnection();
+		prismaMock.snippet.findFirst.mockResolvedValue({
+			projectId: PROJECT,
+			connectionId: null,
+			locked: false,
+		});
+
+		const response = await call('PATCH', single, {
+			payload: {
+				ssh: {
+					host: 'a',
+					user: 'root',
+					authSource: 'agent',
+					startupSnippetId: 'snippet-1',
+				},
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().code).toBe('SN-NS');
+		expect(prismaMock.connection.update).not.toHaveBeenCalled();
+	});
+
+	test('an unchanged startup command is not checked again', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		existingConnection();
+		prismaMock.connection.findFirst.mockResolvedValue({
+			id: 'conn-1',
+			projectId: PROJECT,
+			type: 'ssh',
+			revision: 4n,
+			deletedAt: null,
+			ssh: { startupSnippetId: 'snippet-1' },
+		});
+
+		const response = await call('PATCH', single, {
+			payload: {
+				ssh: {
+					host: 'b',
+					user: 'root',
+					authSource: 'agent',
+					startupSnippetId: 'snippet-1',
+				},
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prismaMock.snippet.findFirst).not.toHaveBeenCalled();
+	});
+
 	test('nothing moves to a project without edit permission', async () => {
 		loginAs();
 		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
@@ -640,5 +775,29 @@ describe('updating a connection', () => {
 
 		expect(response.statusCode).toBe(404);
 		expect(response.json().code).toBe('C-NF');
+	});
+});
+
+describe('deleting a connection', () => {
+	test('its snippets get tombstones along with it', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		prismaMock.connection.findFirst.mockResolvedValue({
+			id: 'conn-1',
+			projectId: PROJECT,
+			deletedAt: null,
+		});
+		prismaMock.organization.update.mockResolvedValue({ revision: 7n });
+
+		const response = await call('DELETE', single);
+
+		expect(response.statusCode).toBe(204);
+		const call0 = prismaMock.snippet.updateMany.mock.calls[0][0];
+		expect(call0.where).toEqual({
+			connectionId: 'conn-1',
+			deletedAt: null,
+		});
+		expect(call0.data.deletedAt).toBeInstanceOf(Date);
+		expect(call0.data.revision).toBe(7n);
 	});
 });
