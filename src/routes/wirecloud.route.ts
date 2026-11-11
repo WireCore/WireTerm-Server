@@ -110,6 +110,10 @@ export default (fastify: FastifyInstance) => {
 									company: { type: 'string', maxLength: 191 },
 									account: { type: 'string', maxLength: 191 },
 									team: { type: 'string', maxLength: 191 },
+									team_name: {
+										type: 'string',
+										maxLength: 255,
+									},
 									role: { type: 'string', maxLength: 32 },
 								},
 							},

@@ -143,6 +143,7 @@ prompt prompt
     DateTime createdAt 
     String metadata "❓"
     BigInt revision 
+    Boolean memberProjects 
     }
   
 
@@ -150,6 +151,7 @@ prompt prompt
     String id "🗝️"
     String role 
     DateTime createdAt 
+    BigInt accessRevision 
     }
   
 

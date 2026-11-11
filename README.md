@@ -138,6 +138,14 @@ aborts. Tokens may be up to 60 seconds off in time.
   ordered via the `sequence` per company or account (table `external_event`).
   `GET /.well-known/wirecloud-tool.json` describes the tool. Both only in
   `wirecloud` mode.
+- **Team changes as events:** `team.member_added` (`company`, `account`,
+  `team`, `team_name`) and `team.member_removed` (`company`, `account`,
+  `team`) change a team at once instead of with the person's next token. The
+  addition is the one gain that is reported: it lets a client that holds the
+  project keys wrap them for the newcomer before they even open WireTerm —
+  provided they have set up a master password. It only applies to someone
+  who is already a member here; the membership itself still comes with the
+  token.
 - **Linking an existing local account:** `POST /api/wirecloud/link` with
   `{ "password": "<previous sign-in password>" }` and the WireCloud token. It
   takes both at once: a token with a **verified** address and the local
@@ -327,9 +335,17 @@ the workspace: creating and deleting projects, managing shares, setting vault
 accounts. `owner` and `admin` also see every project of the organization
 without needing a share.
 
+**Members may create projects** if an owner or admin allows it
+(`PATCH /api/workspaces/:id` with `{ "memberProjects": true }`; off by
+default). Whoever created a project then reads, edits, shares and deletes it
+like an admin — with or without a share, for as long as they are a member.
+Owners and admins see it anyway.
+
 **The share** (`project_share`) decides for everyone else which projects exist
 for them at all. A share points at a team — or, with an empty `teamId`, at the
-whole organization — and grants `editor` or `viewer`.
+whole organization — and grants `editor` or `viewer`. Both can be combined:
+"everyone reads, team Ops writes" are two shares, and the more generous one
+wins. The teams to choose from come with the sync (`teams`).
 
 A project that is not shared answers with **404, not 403**: that a project of
 that name exists is itself information.
@@ -472,16 +488,22 @@ GET …/sync?since=0    → everything this user may see
 GET …/sync?since=17   → only what came after
 ```
 
-Three things matter here:
+Four things matter here:
 
 **Tombstones.** Nothing is deleted; `deletedAt` is set and the revision
 raised. A device that has been offline since the deletion would otherwise
 never learn of it. For secrets the bytes go anyway — a tombstone says the
 secret no longer exists and does not have to keep it for that.
 
-**Two lists are not a delta.** `projectKeys` and `shares` always come
-complete. Both are a handful of rows, and a key that does not come along
+**Three lists are not a delta.** `projectKeys`, `shares` and `teams` always
+come complete. They are a handful of rows, and a key that does not come along
 because `since` is too high makes a project unreadable for no reason.
+
+**New access starts from zero.** Whoever joins a team, becomes admin, or gets
+a project shared with them now sees rows that are older than their `since` —
+a delta would never deliver them. So every such change sets
+`member.accessRevision`, and a sync from before that point is answered as if
+it were `since=0`. A client merges that like any other answer.
 
 **Revisions travel as strings.** `JSON.stringify` throws on a BigInt, and a
 number would be wrong from 2^53 on.

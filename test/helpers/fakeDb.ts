@@ -55,6 +55,24 @@ export class FakeDb {
 		});
 	}
 
+	/// Like Prisma: `{ increment: n }` adds to the value instead of replacing
+	/// it.
+	private assign(row: Row, data: Row) {
+		for (const [key, value] of Object.entries(data)) {
+			const increment =
+				value !== null && typeof value === 'object'
+					? (value as { increment?: unknown }).increment
+					: undefined;
+			row[key] =
+				typeof increment === 'bigint'
+					? BigInt((row[key] as bigint | undefined) ?? 0n) + increment
+					: typeof increment === 'number'
+						? BigInt((row[key] as bigint | undefined) ?? 0n) +
+							BigInt(increment)
+						: value;
+		}
+	}
+
 	private model(table: string, defaults: () => Row = () => ({})) {
 		const rows = this.tables[table];
 		const find = (where: Where) =>
@@ -122,8 +140,20 @@ export class FakeDb {
 				this.operations++;
 				const row = find(where)[0];
 				if (!row) throw new Error('Row not found');
-				Object.assign(row, data);
+				this.assign(row, data);
 				return { ...row };
+			},
+			updateMany: async ({
+				where = {},
+				data,
+			}: {
+				where?: Where;
+				data: Row;
+			}) => {
+				this.operations++;
+				const hit = find(where);
+				for (const row of hit) this.assign(row, data);
+				return { count: hit.length };
 			},
 			delete: async ({ where }: { where: Where }) => {
 				this.operations++;

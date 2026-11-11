@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { call } from '../helpers/app';
-import { loginAs } from '../helpers/auth';
+import { loginAs, USER_ID } from '../helpers/auth';
 import { prismaMock } from '../helpers/prisma';
 
 const ORGANIZATION = 'organization-1';
@@ -42,6 +42,68 @@ describe('creating a project', () => {
 			expect(prismaMock.project.findUnique).not.toHaveBeenCalled();
 		}
 	);
+});
+
+describe('a project of a member', () => {
+	function member(memberProjects: boolean) {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
+		prismaMock.teamMember.findMany.mockResolvedValue([]);
+		prismaMock.projectShare.findMany.mockResolvedValue([]);
+		prismaMock.organization.findUnique.mockResolvedValue({
+			memberProjects,
+		});
+		prismaMock.organization.update.mockResolvedValue({ revision: 5n });
+		prismaMock.project.findUnique.mockResolvedValue(null);
+		prismaMock.project.create.mockImplementation(
+			async ({ data }: { data: Record<string, unknown> }) => data
+		);
+	}
+
+	test('is only created where the workspace allows it', async () => {
+		member(false);
+		const refused = await call('POST', url, {
+			payload: { id: PROJECT, name: 'Mine' },
+		});
+		expect(refused.statusCode).toBe(403);
+
+		member(true);
+		const created = await call('POST', url, {
+			payload: { id: PROJECT, name: 'Mine' },
+		});
+		expect(created.statusCode).toBe(201);
+		expect(
+			prismaMock.project.create.mock.calls[0][0].data.createdById
+		).toBe(USER_ID);
+	});
+
+	test('is deleted by whoever created it', async () => {
+		member(true);
+		prismaMock.project.findMany.mockImplementation(async ({ where }) =>
+			where.createdById === USER_ID ? [{ id: PROJECT }] : []
+		);
+		prismaMock.project.findFirst.mockResolvedValue({
+			id: PROJECT,
+			organizationId: ORGANIZATION,
+			deletedAt: null,
+		});
+
+		const response = await call('DELETE', `${url}/${PROJECT}`);
+
+		expect(response.statusCode).toBe(204);
+	});
+
+	test('but not by an editor it was shared with', async () => {
+		member(true);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ projectId: PROJECT, role: 'editor' },
+		]);
+
+		const response = await call('DELETE', `${url}/${PROJECT}`);
+
+		expect(response.statusCode).toBe(403);
+		expect(prismaMock.project.update).not.toHaveBeenCalled();
+	});
 });
 
 describe('deleting a project', () => {

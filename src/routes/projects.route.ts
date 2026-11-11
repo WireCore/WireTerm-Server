@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import prisma from 'database';
-import { requireWorkspaceAdmin } from 'services/AccessService';
+import {
+	requireProjectCreator,
+	requireProjectManager,
+} from 'services/AccessService';
 import { requireWorkspace } from 'services/RequestAccess';
 import { nextRevision } from 'services/RevisionService';
 import { tombstoneSnippets } from 'services/SnippetService';
@@ -49,7 +52,11 @@ export default (fastify: FastifyInstance) => {
 		async (request, reply) => {
 			const { organizationId } = request.params;
 			const access = await requireWorkspace(request, organizationId);
-			requireWorkspaceAdmin(access);
+			const organization = await prisma.organization.findUnique({
+				where: { id: organizationId },
+				select: { memberProjects: true },
+			});
+			requireProjectCreator(access, !!organization?.memberProjects);
 
 			const existing = await prisma.project.findUnique({
 				where: { id: request.body.id },
@@ -92,7 +99,7 @@ export default (fastify: FastifyInstance) => {
 		async (request) => {
 			const { organizationId, projectId } = request.params;
 			const access = await requireWorkspace(request, organizationId);
-			requireWorkspaceAdmin(access);
+			requireProjectManager(access, projectId);
 
 			const current = await loadProject(organizationId, projectId);
 			checkRevision(current.revision, request.body.expectedRevision);
@@ -131,7 +138,7 @@ export default (fastify: FastifyInstance) => {
 		async (request, reply) => {
 			const { organizationId, projectId } = request.params;
 			const access = await requireWorkspace(request, organizationId);
-			requireWorkspaceAdmin(access);
+			requireProjectManager(access, projectId);
 			await loadProject(organizationId, projectId);
 
 			await prisma.$transaction(async (tx) => {

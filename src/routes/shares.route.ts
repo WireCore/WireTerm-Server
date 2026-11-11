@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import prisma from 'database';
-import { requireWorkspaceAdmin } from 'services/AccessService';
+import { requireProjectManager } from 'services/AccessService';
 import { requireWorkspace } from 'services/RequestAccess';
-import { nextRevision } from 'services/RevisionService';
+import { markAccessChanged, nextRevision } from 'services/RevisionService';
 import { loadProject } from 'services/TreeService';
 import { ErrorCodes } from 'utils/ErrorCodes';
 import { invalid, notFound } from 'utils/http';
@@ -45,7 +45,7 @@ export default (fastify: FastifyInstance) => {
 		async (request) => {
 			const { organizationId, projectId } = request.params;
 			const access = await requireWorkspace(request, organizationId);
-			requireWorkspaceAdmin(access);
+			requireProjectManager(access, projectId);
 			await loadProject(organizationId, projectId);
 
 			const shares = await prisma.projectShare.findMany({
@@ -81,7 +81,7 @@ export default (fastify: FastifyInstance) => {
 		async (request) => {
 			const { organizationId, projectId } = request.params;
 			const access = await requireWorkspace(request, organizationId);
-			requireWorkspaceAdmin(access);
+			requireProjectManager(access, projectId);
 			await loadProject(organizationId, projectId);
 
 			const teamIds = request.body.shares
@@ -127,6 +127,9 @@ export default (fastify: FastifyInstance) => {
 					where: { id: projectId },
 					data: { revision: next },
 				});
+				// Whoever gains the project gets it together with its
+				// connections and secrets, which are older than their `since`.
+				await markAccessChanged(tx, organizationId);
 
 				// Whoever is no longer allowed keeps no wrapped copy.
 				await removeOrphanedKeys(tx, organizationId, projectId);
@@ -145,15 +148,22 @@ export default (fastify: FastifyInstance) => {
 
 /// Deletes the project keys of those who no longer have access after the
 /// change. owner and admin stay: they get into every project without a share.
+/// So does whoever created it.
 async function removeOrphanedKeys(
 	tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
 	organizationId: string,
 	projectId: string
 ) {
-	const shares = await tx.projectShare.findMany({
-		where: { projectId },
-		select: { teamId: true },
-	});
+	const [shares, project] = await Promise.all([
+		tx.projectShare.findMany({
+			where: { projectId },
+			select: { teamId: true },
+		}),
+		tx.project.findUnique({
+			where: { id: projectId },
+			select: { createdById: true },
+		}),
+	]);
 	const teamIds = shares
 		.map((share) => share.teamId)
 		.filter((id): id is string => id !== null);
@@ -164,6 +174,14 @@ async function removeOrphanedKeys(
 		select: { userId: true },
 	});
 	const allowed = new Set(admins.map((member) => member.userId));
+	// Only while they are still a member: the row outlives the membership.
+	if (project?.createdById) {
+		const creator = await tx.member.findFirst({
+			where: { organizationId, userId: project.createdById },
+			select: { userId: true },
+		});
+		if (creator) allowed.add(creator.userId);
+	}
 
 	if (wholeOrganization) {
 		const members = await tx.member.findMany({

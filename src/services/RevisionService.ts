@@ -21,3 +21,28 @@ export async function nextRevision(
 	});
 	return organization.revision;
 }
+
+/// Records that what these members may see has changed — all members of the
+/// workspace if `userIds` is left out.
+///
+/// The delta alone does not cover that: a project shared with someone's team
+/// carries an old revision, and so do its connections and secrets. Their
+/// client asks with a higher `since` and would never get them. Its next sync
+/// therefore starts from zero (see `delta`).
+export async function markAccessChanged(
+	tx: Pick<Prisma.TransactionClient, 'organization' | 'member'>,
+	organizationId: string,
+	userIds?: string[]
+): Promise<void> {
+	const next = await nextRevision(
+		tx as Prisma.TransactionClient,
+		organizationId
+	);
+	await tx.member.updateMany({
+		where: {
+			organizationId,
+			...(userIds ? { userId: { in: userIds } } : {}),
+		},
+		data: { accessRevision: next },
+	});
+}

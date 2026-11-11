@@ -166,10 +166,13 @@ model Organization {
   /// moment. `GET /sync?since=N` therefore returns exactly what has happened
   /// since — instead of the whole document that `workspaces_load` reloads
   /// today.
-  revision   BigInt         @default(0)
-  projects   Project[]
-  vaults     VaultAccount[]
-  knownHosts KnownHostKey[]
+  revision       BigInt         @default(0)
+  /// Whether members may create projects, not only owner and admin. Whoever
+  /// creates one may then read, edit, share and delete it like an admin.
+  memberProjects Boolean        @default(false)
+  projects       Project[]
+  vaults         VaultAccount[]
+  knownHosts     KnownHostKey[]
 
   @@unique([slug])
   @@map("organization")
@@ -186,6 +189,13 @@ model Member {
   /// else `ProjectShare` decides.
   role           String       @db.Text
   createdAt      DateTime
+
+  // WireTerm
+  /// The workspace revision at which this person's access last changed: a
+  /// team joined or left, another role, a project shared differently. The
+  /// rows that became visible then are older than the client's `since`, so a
+  /// sync from before this point returns everything instead of a delta.
+  accessRevision BigInt @default(0)
 
   @@index([organizationId])
   @@index([userId])

@@ -8,13 +8,17 @@ import { workspaceKind } from 'services/WorkspaceService';
 /// What has changed since `since` — including the tombstones, because a
 /// deletion is a change like any other.
 ///
-/// Two lists break the pattern and always come complete: this user's project
-/// keys and the shares. Both are a handful of rows per workspace, and both
-/// have to be right as soon as they are needed — a key that does not come
-/// along because `since` is too high makes a project unreadable for no
-/// reason.
-export async function delta(access: WorkspaceAccess, since: bigint) {
+/// Three lists break the pattern and always come complete: this user's
+/// project keys, the shares and the teams. They are a handful of rows per
+/// workspace, and they have to be right as soon as they are needed — a key
+/// that does not come along because `since` is too high makes a project
+/// unreadable for no reason.
+///
+/// If this person's access has changed since `since` (`Member.accessRevision`),
+/// the answer starts from zero: what became visible is older than `since`.
+export async function delta(access: WorkspaceAccess, requested: bigint) {
 	const organizationId = access.organizationId;
+	const since = requested < access.accessRevision ? 0n : requested;
 
 	const organization = await prisma.organization.findUnique({
 		where: { id: organizationId },
@@ -24,6 +28,7 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 			slug: true,
 			metadata: true,
 			revision: true,
+			memberProjects: true,
 		},
 	});
 	if (!organization) throw notFound(ErrorCodes.WORKSPACE_NOT_FOUND);
@@ -42,6 +47,7 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 		snippets,
 		keys,
 		shares,
+		teams,
 	] = await Promise.all([
 		prisma.project.findMany({
 			where: { ...projectScope, revision: { gt: since } },
@@ -76,6 +82,13 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 			orderBy: { createdAt: 'asc' },
 		}),
 		prisma.projectShare.findMany({ where: { project: projectScope } }),
+		// What a project can be shared with. In WireCloud mode only the teams
+		// one of whose members has signed in here at least once.
+		prisma.team.findMany({
+			where: { organizationId },
+			select: { id: true, name: true },
+			orderBy: { name: 'asc' },
+		}),
 	]);
 
 	return {
@@ -85,6 +98,7 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 			slug: organization.slug,
 			kind: workspaceKind(organization.metadata),
 			role: access.role,
+			memberProjects: organization.memberProjects,
 		},
 		/// The value the client sets its `since` to. It comes from the same row
 		/// that was filtered against above.
@@ -126,6 +140,7 @@ export async function delta(access: WorkspaceAccess, since: bigint) {
 			teamId: share.teamId,
 			role: share.role,
 		})),
+		teams,
 	};
 }
 

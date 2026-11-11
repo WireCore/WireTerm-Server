@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from 'generated/prisma/client';
 import type { WireCloudClaims, WireCloudMembership } from 'lib/wirecloud';
+import { markAccessChanged } from 'services/RevisionService';
 import { ErrorCodes } from 'utils/ErrorCodes';
 import { HttpError, conflict } from 'utils/http';
 
@@ -43,7 +44,7 @@ type Db = Pick<
 >;
 
 async function refFor(
-	db: Db,
+	db: Pick<Db, 'externalRef'>,
 	entityType: string,
 	issuer: string,
 	externalId: string
@@ -170,8 +171,8 @@ async function ensureOrganization(
 	return org.id;
 }
 
-async function ensureTeam(
-	db: Db,
+export async function ensureTeam(
+	db: Pick<Db, 'team' | 'externalRef'>,
 	issuer: string,
 	organizationId: string,
 	team: { id: string; name: string },
@@ -237,7 +238,7 @@ async function syncTeams(
 	userId: string,
 	membership: WireCloudMembership,
 	now: Date
-) {
+): Promise<boolean> {
 	const touched = new Set<string>();
 	const claimed = new Set<string>();
 
@@ -293,6 +294,7 @@ async function syncTeams(
 	}
 
 	await recount(db, touched, now);
+	return touched.size > 0;
 }
 
 /// Removes the memberships in companies managed by WireCloud that the token
@@ -385,6 +387,7 @@ export async function syncFromClaims(
 				where: { organizationId, userId },
 				select: { id: true, role: true },
 			});
+			const roleChanged = !member || member.role !== membership.toolRole;
 			if (!member) {
 				await db.member.create({
 					data: {
@@ -402,7 +405,7 @@ export async function syncFromClaims(
 				});
 			}
 
-			await syncTeams(
+			const teamsChanged = await syncTeams(
 				db,
 				claims,
 				organizationId,
@@ -410,6 +413,9 @@ export async function syncFromClaims(
 				membership,
 				now
 			);
+			if (roleChanged || teamsChanged) {
+				await markAccessChanged(db, organizationId, [userId]);
+			}
 		}
 
 		await dropRevoked(db, claims, userId, wanted, now);

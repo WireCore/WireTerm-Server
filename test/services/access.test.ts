@@ -3,6 +3,8 @@ import { prismaMock } from '../helpers/prisma';
 import {
 	projectRole,
 	requireProject,
+	requireProjectCreator,
+	requireProjectManager,
 	requireWorkspaceAdmin,
 	visibleProjectFilter,
 	workspaceAccess,
@@ -80,6 +82,28 @@ describe('access to a workspace', () => {
 		expect(projectRole(access, 'project-1')).toBe('editor');
 	});
 
+	test('a member edits what they created, even without a share', async () => {
+		prismaMock.member.findFirst.mockResolvedValue({
+			role: 'member',
+			accessRevision: 7n,
+		});
+		prismaMock.teamMember.findMany.mockResolvedValue([]);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ projectId: 'project-1', role: 'viewer' },
+		]);
+		prismaMock.project.findMany.mockResolvedValue([{ id: 'project-1' }]);
+
+		const access = await workspaceAccess(prisma, 'user-2', ORGANIZATION);
+
+		expect(projectRole(access, 'project-1')).toBe('editor');
+		expect(access.ownProjects).toEqual(new Set(['project-1']));
+		expect(access.accessRevision).toBe(7n);
+		expect(prismaMock.project.findMany.mock.calls[0][0].where).toEqual({
+			organizationId: ORGANIZATION,
+			createdById: 'user-2',
+		});
+	});
+
 	test('a deleted project stays visible, otherwise the tombstone never arrives', async () => {
 		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
 		prismaMock.teamMember.findMany.mockResolvedValue([]);
@@ -99,6 +123,8 @@ describe('permissions on a project', () => {
 		role: 'member' as const,
 		everyProject: false,
 		projectRoles: new Map([['project-1', 'viewer' as const]]),
+		ownProjects: new Set<string>(),
+		accessRevision: 0n,
 	};
 
 	test('a viewer may not write', () => {
@@ -129,6 +155,40 @@ describe('permissions on a project', () => {
 		// 404 instead of 403: that the project exists is itself information.
 		expect(failure?.status).toBe(404);
 		expect(failure?.code).toBe(ErrorCodes.PROJECT_NOT_FOUND);
+	});
+
+	test("whoever created a project manages it; an editor of someone else's does not", () => {
+		const creator = {
+			...viewer,
+			projectRoles: new Map([
+				['project-1', 'editor' as const],
+				['project-2', 'editor' as const],
+			]),
+			ownProjects: new Set(['project-1']),
+		};
+		const status = (projectId: string) => {
+			try {
+				requireProjectManager(creator, projectId);
+				return 200;
+			} catch (error) {
+				return (error as HttpError).status;
+			}
+		};
+
+		expect(status('project-1')).toBe(200);
+		expect(status('project-2')).toBe(403);
+		expect(status('project-9')).toBe(404);
+		expect(() =>
+			requireProjectManager({ ...viewer, role: 'admin' }, 'project-9')
+		).not.toThrow();
+	});
+
+	test('members create projects only where the workspace allows it', () => {
+		expect(() => requireProjectCreator(viewer, false)).toThrow();
+		expect(() => requireProjectCreator(viewer, true)).not.toThrow();
+		expect(() =>
+			requireProjectCreator({ ...viewer, role: 'owner' }, false)
+		).not.toThrow();
 	});
 
 	test('only owner and admin manage the workspace', () => {

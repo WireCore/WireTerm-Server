@@ -203,11 +203,15 @@ describe('membership.role_changed', () => {
 			}),
 		]);
 		const bob = db.tables.user.find((u) => u.name === 'bob')!;
-		expect(
-			db.tables.member.find(
-				(m) => m.userId === bob.id && m.organizationId === orgId()
-			)?.role
-		).toBe('admin');
+		const member = db.tables.member.find(
+			(m) => m.userId === bob.id && m.organizationId === orgId()
+		);
+		expect(member?.role).toBe('admin');
+		// As an admin bob now sees every project: his next sync starts from
+		// zero.
+		expect(member?.accessRevision).toBe(
+			db.tables.organization.find((o) => o.id === orgId())!.revision
+		);
 	});
 
 	it('rejects an unknown role, changes nothing and acknowledges', async () => {
@@ -244,6 +248,108 @@ describe('team.deleted', () => {
 		).toHaveLength(0);
 		expect(db.tables.organization.length).toBeGreaterThan(0);
 		expect(db.tables.member.length).toBeGreaterThan(0);
+	});
+});
+
+describe('team.member_added', () => {
+	const bobsMember = () => {
+		const bob = db.tables.user.find((u) => u.name === 'bob')!;
+		return db.tables.member.find(
+			(m) => m.userId === bob.id && m.organizationId === orgId()
+		)!;
+	};
+
+	it('puts the member into a team that does not exist here yet, and marks their access as changed', async () => {
+		const before = bobsMember().accessRevision;
+		const result = await run([
+			event({
+				type: 'team.member_added',
+				company: 'company-1',
+				account: 'bob',
+				team: 'team-2',
+				team_name: 'Ops',
+			}),
+		]);
+		expect(result).toEqual({ applied: 1, ignored: 0, rejected: 0 });
+
+		const ops = db.tables.team.find((t) => t.name === 'Ops')!;
+		expect(ops.organizationId).toBe(orgId());
+		expect(ops.memberCount).toBe(1);
+		expect(
+			db.tables.teamMember.filter((tm) => tm.teamId === ops.id)
+		).toMatchObject([{ userId: bobsMember().userId }]);
+		// The next sync of bob starts from zero.
+		expect(bobsMember().accessRevision).not.toBe(before);
+		expect(bobsMember().accessRevision).toBe(
+			db.tables.organization.find((o) => o.id === orgId())!.revision
+		);
+	});
+
+	it('does nothing a second time for a team the member is already in', async () => {
+		const before = bobsMember().accessRevision;
+		await run([
+			event({
+				type: 'team.member_added',
+				company: 'company-1',
+				account: 'bob',
+				team: 'team-1',
+				team_name: 'Support',
+			}),
+		]);
+		expect(db.tables.teamMember).toHaveLength(2);
+		expect(bobsMember().accessRevision).toBe(before);
+	});
+
+	it('leaves someone alone who is not a member here — that comes with the token', async () => {
+		const result = await run([
+			event({
+				type: 'team.member_added',
+				company: 'company-1',
+				account: 'carol',
+				team: 'team-2',
+				team_name: 'Ops',
+			}),
+		]);
+		expect(result.applied).toBe(1);
+		expect(db.tables.team).toHaveLength(1);
+	});
+
+	it('needs the name of the team', async () => {
+		const result = await run([
+			event({
+				type: 'team.member_added',
+				company: 'company-1',
+				account: 'bob',
+				team: 'team-2',
+			}),
+		]);
+		expect(result).toEqual({ applied: 0, ignored: 0, rejected: 1 });
+		expect(db.tables.team).toHaveLength(1);
+	});
+});
+
+describe('team.member_removed', () => {
+	it('takes the member out of the team, recounts and marks their access as changed', async () => {
+		const bob = db.tables.user.find((u) => u.name === 'bob')!;
+		await run([
+			event({
+				type: 'team.member_removed',
+				company: 'company-1',
+				account: 'bob',
+				team: 'team-1',
+			}),
+		]);
+		expect(db.tables.teamMember.some((tm) => tm.userId === bob.id)).toBe(
+			false
+		);
+		expect(db.tables.team[0].memberCount).toBe(1);
+		// The membership in the company stays.
+		const member = db.tables.member.find(
+			(m) => m.userId === bob.id && m.organizationId === orgId()
+		)!;
+		expect(member.accessRevision).toBe(
+			db.tables.organization.find((o) => o.id === orgId())!.revision
+		);
 	});
 });
 

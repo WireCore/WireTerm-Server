@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import prisma from 'database';
 import { AUTH_MODE, WIRECLOUD_ISSUER } from 'globals';
+import { requireWorkspaceAdmin } from 'services/AccessService';
 import { requireUser } from 'services/AuthService';
 import { requireWorkspace } from 'services/RequestAccess';
 import { delta } from 'services/SyncService';
@@ -8,6 +9,15 @@ import { workspaceKind } from 'services/WorkspaceService';
 import { parseRevision, revision } from 'utils/http';
 
 type OrgParams = { organizationId: string };
+
+const settingsSchema = {
+	body: {
+		type: 'object',
+		required: ['memberProjects'],
+		additionalProperties: false,
+		properties: { memberProjects: { type: 'boolean' } },
+	},
+};
 
 export default (fastify: FastifyInstance) => {
 	/// The workspaces this user has — one row per organization they are a
@@ -25,6 +35,7 @@ export default (fastify: FastifyInstance) => {
 						slug: true,
 						metadata: true,
 						revision: true,
+						memberProjects: true,
 					},
 				},
 			},
@@ -57,6 +68,8 @@ export default (fastify: FastifyInstance) => {
 			// allowed, and that turns it into a team.
 			kind: workspaceKind(membership.organization.metadata),
 			role: membership.role,
+			// Whether members may create projects, not only owner and admin.
+			memberProjects: membership.organization.memberProjects,
 			revision: revision(membership.organization.revision),
 			// `null` for "Personal", for organizations of this server's own and
 			// outside WireCloud mode.
@@ -75,6 +88,25 @@ export default (fastify: FastifyInstance) => {
 				request.params.organizationId
 			);
 			return delta(access, parseRevision(request.query.since));
+		}
+	);
+
+	/// The settings of a workspace that are WireTerm's, not better-auth's.
+	/// Name, members and teams stay with better-auth (or WireCloud).
+	fastify.patch<{ Params: OrgParams; Body: { memberProjects: boolean } }>(
+		'/api/workspaces/:organizationId',
+		{ schema: settingsSchema },
+		async (request) => {
+			const { organizationId } = request.params;
+			const access = await requireWorkspace(request, organizationId);
+			requireWorkspaceAdmin(access);
+
+			const organization = await prisma.organization.update({
+				where: { id: organizationId },
+				data: { memberProjects: request.body.memberProjects },
+				select: { memberProjects: true },
+			});
+			return { memberProjects: organization.memberProjects };
 		}
 	);
 };

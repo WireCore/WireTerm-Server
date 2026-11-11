@@ -22,6 +22,7 @@ function emptyTree() {
 		prismaMock.snippet,
 		prismaMock.projectKey,
 		prismaMock.projectShare,
+		prismaMock.team,
 	]) {
 		model.findMany.mockResolvedValue([]);
 	}
@@ -203,13 +204,67 @@ describe('sync', () => {
 
 		await call('GET', url);
 
+		// The first query asks for the projects the member created.
 		expect(
-			prismaMock.project.findMany.mock.calls[0][0].where
+			prismaMock.project.findMany.mock.calls[1][0].where
 		).toMatchObject({
 			organizationId: ORGANIZATION,
 			id: { in: ['project-1'] },
 		});
 	});
+
+	test('names the teams a project can be shared with, and whether members create projects', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		prismaMock.organization.findUnique.mockResolvedValue({
+			id: ORGANIZATION,
+			name: 'WireCore',
+			slug: 'wirecore',
+			revision: 42n,
+			memberProjects: true,
+		});
+		prismaMock.team.findMany.mockResolvedValue([
+			{ id: 'team-1', name: 'Ops' },
+		]);
+
+		const body = (
+			await call('GET', url, { query: { since: '40' } })
+		).json();
+
+		expect(body.teams).toEqual([{ id: 'team-1', name: 'Ops' }]);
+		expect(body.workspace.memberProjects).toBe(true);
+		expect(prismaMock.team.findMany.mock.calls[0][0].where).toEqual({
+			organizationId: ORGANIZATION,
+		});
+	});
+
+	test.each([
+		['before', '30', 0n],
+		['after', '40', 40n],
+	])(
+		'a `since` from %s the last change of access asks from %s on',
+		async (_, since, from) => {
+			loginAs();
+			// Someone joined a team at revision 35: what they see now is older
+			// than their `since`.
+			prismaMock.member.findFirst.mockResolvedValue({
+				role: 'member',
+				accessRevision: 35n,
+			});
+			prismaMock.teamMember.findMany.mockResolvedValue([
+				{ teamId: 'team-1' },
+			]);
+			prismaMock.projectShare.findMany.mockResolvedValue([
+				{ projectId: 'project-1', role: 'editor' },
+			]);
+
+			await call('GET', url, { query: { since } });
+
+			expect(
+				prismaMock.connection.findMany.mock.calls[0][0].where.revision
+			).toEqual({ gt: from });
+		}
+	);
 
 	test('a `since` that is not a number is rejected', async () => {
 		loginAs();
@@ -235,6 +290,7 @@ describe('the list of workspaces', () => {
 					slug: 'personal-user-1',
 					metadata: '{"kind":"personal"}',
 					revision: 3n,
+					memberProjects: false,
 				},
 			},
 			{
@@ -245,6 +301,7 @@ describe('the list of workspaces', () => {
 					slug: 'wirecore',
 					metadata: null,
 					revision: 7n,
+					memberProjects: true,
 				},
 			},
 		]);
@@ -259,6 +316,7 @@ describe('the list of workspaces', () => {
 				slug: 'personal-user-1',
 				kind: 'personal',
 				role: 'owner',
+				memberProjects: false,
 				revision: '3',
 				wirecloudCompany: null,
 			},
@@ -268,6 +326,7 @@ describe('the list of workspaces', () => {
 				slug: 'wirecore',
 				kind: 'organization',
 				role: 'member',
+				memberProjects: true,
 				revision: '7',
 				wirecloudCompany: null,
 			},
@@ -277,5 +336,58 @@ describe('the list of workspaces', () => {
 	test('it is not available without signing in', async () => {
 		const response = await call('GET', '/api/workspaces');
 		expect(response.statusCode).toBe(401);
+	});
+});
+
+describe('the settings of a workspace', () => {
+	const settings = `/api/workspaces/${ORGANIZATION}`;
+
+	test('an admin lets members create projects', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'admin' });
+		prismaMock.organization.update.mockResolvedValue({
+			memberProjects: true,
+		});
+
+		const response = await call('PATCH', settings, {
+			payload: { memberProjects: true },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ memberProjects: true });
+		expect(prismaMock.organization.update.mock.calls[0][0]).toMatchObject({
+			where: { id: ORGANIZATION },
+			data: { memberProjects: true },
+		});
+	});
+
+	test('a member does not', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
+		prismaMock.teamMember.findMany.mockResolvedValue([]);
+		prismaMock.projectShare.findMany.mockResolvedValue([]);
+
+		const response = await call('PATCH', settings, {
+			payload: { memberProjects: true },
+		});
+
+		expect(response.statusCode).toBe(403);
+		expect(prismaMock.organization.update).not.toHaveBeenCalled();
+	});
+
+	test('nothing else can be changed here — the name stays with better-auth', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({ role: 'owner' });
+		prismaMock.organization.update.mockResolvedValue({
+			memberProjects: false,
+		});
+
+		await call('PATCH', settings, {
+			payload: { memberProjects: false, name: 'Other' },
+		});
+
+		expect(prismaMock.organization.update.mock.calls[0][0].data).toEqual({
+			memberProjects: false,
+		});
 	});
 });

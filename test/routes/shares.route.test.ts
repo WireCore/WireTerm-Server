@@ -19,11 +19,13 @@ function adminOfLivingProject() {
 }
 
 describe('shares of a project', () => {
-	test('a plain member does not manage them', async () => {
+	test('a plain member does not manage them, even as an editor', async () => {
 		loginAs();
 		prismaMock.member.findFirst.mockResolvedValue({ role: 'member' });
 		prismaMock.teamMember.findMany.mockResolvedValue([]);
-		prismaMock.projectShare.findMany.mockResolvedValue([]);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ projectId: PROJECT, role: 'editor' },
+		]);
 
 		const response = await call('PUT', url, {
 			payload: { shares: [{ teamId: 'team-1', role: 'editor' }] },
@@ -83,5 +85,56 @@ describe('shares of a project', () => {
 		});
 
 		expect(response.statusCode).toBe(400);
+	});
+
+	test('whoever created the project shares it, and keeps their copy of the key', async () => {
+		loginAs();
+		prismaMock.member.findFirst.mockResolvedValue({
+			role: 'member',
+			userId: USER_ID,
+		});
+		prismaMock.teamMember.findMany.mockResolvedValue([]);
+		prismaMock.project.findMany.mockResolvedValue([{ id: PROJECT }]);
+		prismaMock.project.findFirst.mockResolvedValue({
+			id: PROJECT,
+			organizationId: ORGANIZATION,
+			deletedAt: null,
+		});
+		prismaMock.project.findUnique.mockResolvedValue({
+			createdById: USER_ID,
+		});
+		prismaMock.organization.update.mockResolvedValue({ revision: 12n });
+		prismaMock.team.count.mockResolvedValue(1);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ teamId: 'team-1' },
+		]);
+		prismaMock.member.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+		const response = await call('PUT', url, {
+			payload: { shares: [{ teamId: 'team-1', role: 'viewer' }] },
+		});
+
+		expect(response.statusCode).toBe(200);
+		const where = prismaMock.projectKey.deleteMany.mock.calls[0][0].where;
+		expect(where.userId.notIn).toContain(USER_ID);
+	});
+
+	test('a changed share makes the next sync of the members start from zero', async () => {
+		adminOfLivingProject();
+		prismaMock.team.count.mockResolvedValue(1);
+		prismaMock.projectShare.findMany.mockResolvedValue([
+			{ teamId: 'team-1' },
+		]);
+		prismaMock.member.findMany.mockResolvedValue([]);
+		prismaMock.teamMember.findMany.mockResolvedValue([]);
+
+		await call('PUT', url, {
+			payload: { shares: [{ teamId: 'team-1', role: 'editor' }] },
+		});
+
+		expect(prismaMock.member.updateMany.mock.calls[0][0]).toEqual({
+			where: { organizationId: ORGANIZATION },
+			data: { accessRevision: 12n },
+		});
 	});
 });

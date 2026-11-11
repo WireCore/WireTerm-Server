@@ -13,13 +13,19 @@ export type WorkspaceAccess = {
 	role: WorkspaceRole;
 	/// `owner` and `admin` get at every project of the organization without a
 	/// share being needed. For `member`, `projectRoles` holds what was shared
-	/// via a team or with the whole organization.
+	/// via a team or with the whole organization, plus the projects they
+	/// created themselves.
 	///
 	/// This applies to *visibility*. Even an owner only gets at the secrets
 	/// if someone has wrapped the project key for them — the server cannot do
 	/// that, see `ProjectKey` in the schema.
 	everyProject: boolean;
 	projectRoles: Map<string, ProjectRole>;
+	/// The projects this member created. They manage them like an admin:
+	/// rename, share, delete.
+	ownProjects: Set<string>;
+	/// See `Member.accessRevision`.
+	accessRevision: bigint;
 };
 
 /// Throws if the user has no business in this organization.
@@ -30,11 +36,12 @@ export async function workspaceAccess(
 ): Promise<WorkspaceAccess> {
 	const member = await prisma.member.findFirst({
 		where: { userId, organizationId },
-		select: { role: true },
+		select: { role: true, accessRevision: true },
 	});
 	if (!member) throw notFound(ErrorCodes.WORKSPACE_NOT_FOUND);
 
 	const role = (member.role as WorkspaceRole) ?? 'member';
+	const accessRevision = member.accessRevision;
 	if (role === 'owner' || role === 'admin') {
 		return {
 			organizationId,
@@ -42,6 +49,8 @@ export async function workspaceAccess(
 			role,
 			everyProject: true,
 			projectRoles: new Map(),
+			ownProjects: new Set(),
+			accessRevision,
 		};
 	}
 
@@ -51,17 +60,25 @@ export async function workspaceAccess(
 	});
 	const teamIds = teams.map((team) => team.teamId);
 
-	const shares = await prisma.projectShare.findMany({
-		where: {
-			// Without `deletedAt: null`: a deleted project has to stay visible,
-			// otherwise a client that has been offline since the deletion never
-			// learns of it — the tombstone would never reach it.
-			project: { organizationId },
-			// `teamId: null` is the share with the whole organization.
-			OR: [{ teamId: null }, { teamId: { in: teamIds } }],
-		},
-		select: { projectId: true, role: true },
-	});
+	const [shares, created] = await Promise.all([
+		prisma.projectShare.findMany({
+			where: {
+				// Without `deletedAt: null`: a deleted project has to stay
+				// visible, otherwise a client that has been offline since the
+				// deletion never learns of it — the tombstone would never reach
+				// it.
+				project: { organizationId },
+				// `teamId: null` is the share with the whole organization.
+				OR: [{ teamId: null }, { teamId: { in: teamIds } }],
+			},
+			select: { projectId: true, role: true },
+		}),
+		// The same goes for the tombstone of a project of one's own.
+		prisma.project.findMany({
+			where: { organizationId, createdById: userId },
+			select: { id: true },
+		}),
+	]);
 
 	const projectRoles = new Map<string, ProjectRole>();
 	for (const share of shares) {
@@ -70,19 +87,52 @@ export async function workspaceAccess(
 			projectRoles.set(share.projectId, share.role);
 		}
 	}
+	const ownProjects = new Set(created.map((project) => project.id));
+	for (const projectId of ownProjects) projectRoles.set(projectId, 'editor');
 
-	return { organizationId, userId, role, everyProject: false, projectRoles };
+	return {
+		organizationId,
+		userId,
+		role,
+		everyProject: false,
+		projectRoles,
+		ownProjects,
+		accessRevision,
+	};
 }
 
-/// Only owner and admin create projects, delete them, and manage shares and
-/// the workspace's vault accounts. Who may edit a project is stated in the
-/// share.
+/// Only owner and admin manage the workspace itself: its vault accounts, its
+/// settings, and the projects of others. Who may edit a project is stated in
+/// the share.
 export function requireWorkspaceAdmin(access: WorkspaceAccess) {
 	if (!isWorkspaceAdmin(access)) throw forbidden();
 }
 
 export function isWorkspaceAdmin(access: WorkspaceAccess): boolean {
 	return access.role === 'owner' || access.role === 'admin';
+}
+
+/// Owner and admin create projects; members only if the workspace allows it
+/// (`organization.memberProjects`).
+export function requireProjectCreator(
+	access: WorkspaceAccess,
+	memberProjects: boolean
+) {
+	if (!isWorkspaceAdmin(access) && !memberProjects) throw forbidden();
+}
+
+/// Renaming, sharing and deleting a project: owner and admin, and whoever
+/// created it. Someone who does not even see the project gets 404, like
+/// everywhere else.
+export function requireProjectManager(
+	access: WorkspaceAccess,
+	projectId: string
+) {
+	if (isWorkspaceAdmin(access)) return;
+	if (!projectRole(access, projectId)) {
+		throw notFound(ErrorCodes.PROJECT_NOT_FOUND);
+	}
+	if (!access.ownProjects.has(projectId)) throw forbidden();
 }
 
 export function projectRole(

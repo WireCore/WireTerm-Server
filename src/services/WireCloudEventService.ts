@@ -1,5 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from 'generated/prisma/client';
-import { recount, removeMembership } from 'services/WireCloudSyncService';
+import { markAccessChanged } from 'services/RevisionService';
+import {
+	ensureTeam,
+	recount,
+	removeMembership,
+} from 'services/WireCloudSyncService';
 
 /// Applies events from WireCloud (VERTRAG.md 7 and 9). They take away access,
 /// never data: memberships and teams disappear, projects, connections and
@@ -7,6 +13,12 @@ import { recount, removeMembership } from 'services/WireCloudSyncService';
 /// access again later is recreated with the next token. The person's wrapped
 /// project keys stay in place, so that `stale-keys` can name the projects
 /// whose keys need to be renewed.
+///
+/// The one gain that is reported is a team (`team.member_added`): without it
+/// the team would only arrive with the person's next token, and nobody could
+/// wrap the project keys of that team for them before they open WireTerm. It
+/// only applies to someone who is already a member here — a membership itself
+/// still comes with the token.
 ///
 /// Delivery is at least once and in order. Therefore:
 /// - an `id` already seen is skipped (idempotent) and
@@ -23,6 +35,8 @@ export const EVENT_TYPES = [
 	'org.deleted',
 	'account.suspended',
 	'account.deleted',
+	'team.member_added',
+	'team.member_removed',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -33,6 +47,8 @@ export type WireCloudEvent = {
 	company?: string;
 	account?: string;
 	team?: string;
+	/// Only `team.member_added`: the team may not exist here yet.
+	team_name?: string;
 	role?: string;
 };
 
@@ -96,6 +112,15 @@ function wellFormed(event: WireCloudEvent): boolean {
 		case 'account.suspended':
 		case 'account.deleted':
 			return !!event.account;
+		case 'team.member_added':
+			return (
+				!!event.company &&
+				!!event.account &&
+				!!event.team &&
+				!!event.team_name
+			);
+		case 'team.member_removed':
+			return !!event.company && !!event.account && !!event.team;
 		default:
 			return false;
 	}
@@ -130,7 +155,59 @@ async function apply(
 					where: { id: member.id },
 					data: { role: event.role },
 				});
+				await markAccessChanged(db, orgId, [userId]);
 			}
+			return;
+		}
+		case 'team.member_added': {
+			const [userId, orgId] = await Promise.all([
+				localIdOf(db, 'user', issuer, event.account!),
+				localIdOf(db, 'organization', issuer, event.company!),
+			]);
+			if (!userId || !orgId) return;
+			const member = await db.member.findFirst({
+				where: { userId, organizationId: orgId },
+				select: { id: true },
+			});
+			if (!member) return;
+			const teamId = await ensureTeam(
+				db,
+				issuer,
+				orgId,
+				{ id: event.team!, name: event.team_name! },
+				now
+			);
+			const present = await db.teamMember.findFirst({
+				where: { teamId, userId },
+				select: { id: true },
+			});
+			if (present) return;
+			await db.teamMember.create({
+				data: {
+					id: randomUUID(),
+					teamId,
+					userId,
+					membershipKey: `${teamId}:${userId}`,
+					createdAt: now,
+				},
+			});
+			await recount(db, [teamId], now);
+			await markAccessChanged(db, orgId, [userId]);
+			return;
+		}
+		case 'team.member_removed': {
+			const [userId, orgId, teamId] = await Promise.all([
+				localIdOf(db, 'user', issuer, event.account!),
+				localIdOf(db, 'organization', issuer, event.company!),
+				localIdOf(db, 'team', issuer, event.team!),
+			]);
+			if (!userId || !orgId || !teamId) return;
+			const { count } = await db.teamMember.deleteMany({
+				where: { teamId, userId, team: { organizationId: orgId } },
+			});
+			if (count === 0) return;
+			await recount(db, [teamId], now);
+			await markAccessChanged(db, orgId, [userId]);
 			return;
 		}
 		case 'team.deleted': {

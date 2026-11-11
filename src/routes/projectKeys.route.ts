@@ -306,18 +306,32 @@ export default (fastify: FastifyInstance) => {
 	);
 };
 
-/// Who may see this project: owner and admin of the organization, plus the
-/// members of the teams it is shared with — and everyone, if it is shared with
-/// the whole organization.
+/// Who may see this project: owner and admin of the organization, whoever
+/// created it, plus the members of the teams it is shared with — and everyone,
+/// if it is shared with the whole organization.
 async function entitledUsers(
 	organizationId: string,
 	projectId: string
 ): Promise<Set<string>> {
-	const admins = await prisma.member.findMany({
-		where: { organizationId, role: { in: ['owner', 'admin'] } },
-		select: { userId: true },
-	});
+	const [admins, project] = await Promise.all([
+		prisma.member.findMany({
+			where: { organizationId, role: { in: ['owner', 'admin'] } },
+			select: { userId: true },
+		}),
+		prisma.project.findUnique({
+			where: { id: projectId },
+			select: { createdById: true },
+		}),
+	]);
 	const entitled = new Set(admins.map((member) => member.userId));
+	// Only while they are still a member: the row outlives the membership.
+	if (project?.createdById) {
+		const creator = await prisma.member.findFirst({
+			where: { organizationId, userId: project.createdById },
+			select: { userId: true },
+		});
+		if (creator) entitled.add(creator.userId);
+	}
 
 	const shares = await prisma.projectShare.findMany({
 		where: { projectId },

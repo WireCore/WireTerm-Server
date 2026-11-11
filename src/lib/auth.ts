@@ -7,6 +7,7 @@ import app from 'index';
 import prisma from 'database';
 import { sendTemplatedMail } from 'lib/mails';
 import { localeFromAcceptLanguage, resolveLocale, toLocale } from 'lib/locale';
+import { markAccessChanged } from 'services/RevisionService';
 import {
 	ensurePersonalWorkspace,
 	workspaceKind,
@@ -22,6 +23,12 @@ import {
 	BETTER_AUTH_TRUSTED_ORIGINS,
 	CORS_ORIGIN,
 } from 'globals';
+
+async function accessChanged(organizationId: string, userId: string) {
+	await prisma.$transaction((tx) =>
+		markAccessChanged(tx, organizationId, [userId])
+	);
+}
 
 /// Where the links in mails point: this backend's own pages
 /// (`routes/pages.route.ts`), or a web frontend of one's own if APP_LINK_BASE
@@ -219,6 +226,17 @@ export const auth = betterAuth({
 						});
 					}
 				},
+				// What someone may see follows from their teams and their
+				// role. When either changes, their next sync starts from zero
+				// (see `markAccessChanged`).
+				afterAddTeamMember: async ({ teamMember, organization: org }) =>
+					accessChanged(org.id, teamMember.userId),
+				afterRemoveTeamMember: async ({
+					teamMember,
+					organization: org,
+				}) => accessChanged(org.id, teamMember.userId),
+				afterUpdateMemberRole: async ({ member, organization: org }) =>
+					accessChanged(org.id, member.userId),
 			},
 			// In the language of the invited account if there is one, else in
 			// the language of the request that sent the invitation.

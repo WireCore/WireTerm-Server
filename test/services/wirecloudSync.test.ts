@@ -213,6 +213,34 @@ describe('reconciling', () => {
 		expect(db.tables.team[0].name).toBe('Customer service');
 	});
 
+	it('marks the access as changed when role or teams change, not otherwise', async () => {
+		const { db, sync } = setup();
+		await sync(claims());
+		const first = db.tables.member[0].accessRevision;
+		expect(first).toBe(db.tables.organization[0].revision);
+
+		await sync(claims({ tokenId: 'jti-2' }));
+		expect(db.tables.member[0].accessRevision).toBe(first);
+
+		await sync(
+			claims({
+				tokenId: 'jti-3',
+				memberships: [
+					{
+						company: 'company-1',
+						name: 'Acme GmbH',
+						toolRole: 'admin',
+						teams: [],
+					},
+				],
+			})
+		);
+		expect(db.tables.member[0].accessRevision).not.toBe(first);
+		expect(db.tables.member[0].accessRevision).toBe(
+			db.tables.organization[0].revision
+		);
+	});
+
 	it('reconciles name and verification of the account', async () => {
 		const { db, sync } = setup();
 		await sync(claims());

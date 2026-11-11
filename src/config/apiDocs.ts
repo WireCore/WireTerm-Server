@@ -73,6 +73,11 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
 		tags: ['Workspaces'],
 		summary: 'Everything that changed since a revision (`?since=N`)',
 	},
+	[`PATCH ${WS}`]: {
+		tags: ['Workspaces'],
+		summary:
+			'Change the settings of a workspace (whether members may create projects)',
+	},
 
 	[`POST ${WS}/projects`]: {
 		tags: ['Projects'],
